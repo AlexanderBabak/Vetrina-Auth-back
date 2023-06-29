@@ -147,10 +147,26 @@ const resendVerifyEmail = async (req, res) => {
     throw HttpError(400, "Verification has already been passed");
   }
 
+  // create verificationCode for verifying an email after sign up
+  const verificationToken = generateRandomNumber();
+
+  const updatedVerificationTokenUser = await User.findByIdAndUpdate(
+      user._id,
+      { verificationToken },
+      {
+        new: true,
+        select: "verificationToken",
+      }
+  );
+
+  if (!updatedVerificationTokenUser) {
+    throw HttpError(404, "VerificationToken not found");
+  }
+
   const verificationEmail = {
     to: normalizedEmail,
     subject: "Please verify your email",
-    html: `<p>Confirmation code <h1>${user.verificationToken}</h1> to verify your email: <strong>${normalizedEmail}</strong></p>`,
+    html: `<p>Confirmation code <h1>${verificationToken}</h1> to verify your email: <strong>${normalizedEmail}</strong></p>`,
   };
 
   // sends verification email
