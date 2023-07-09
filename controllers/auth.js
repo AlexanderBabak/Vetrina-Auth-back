@@ -20,7 +20,8 @@ const signup = async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   const user = await User.findOne({ email: normalizedEmail });
-  if (user) {
+
+  if (user?.verified) {
     throw HttpError(409, "Email is already in use");
   }
 
@@ -29,17 +30,31 @@ const signup = async (req, res) => {
   // create verificationCode for verifying an email after sign up
   const verificationToken = generateRandomNumber();
 
-  // If email is unique, we make a request to create a new user;
-  const newUser = await User.create({
-    name,
-    email: normalizedEmail,
-    password: hashedPassword,
-    verificationToken,
-  });
+  // If email is unique, we make a request to create a new user, or update existing user verificationToken
+  if (!user) {
+    const newUser = await User.create({
+      name,
+      email: normalizedEmail,
+      password: hashedPassword,
+      verificationToken,
+    });
 
-  if (!newUser) {
-    throw HttpError(422, "Unprocessable Content");
+    if (!newUser) {
+      throw HttpError(422, "Unprocessable Content");
+    }
+  } else {
+    const updatedUser = await User.findByIdAndUpdate(user._id,
+        { verificationToken, name, password: hashedPassword  },
+        {
+          new: true,
+          select: "verificationToken",
+        });
+
+    if (!updatedUser) {
+      throw HttpError(422, "Unprocessable Content");
+    }
   }
+
 
   const verificationEmail = {
     to: normalizedEmail,
@@ -118,7 +133,7 @@ const verifyEmail = async (req, res) => {
   const user = await User.findOne({ verificationToken });
 
   if (!user) {
-    throw HttpError(404, "User not found");
+    throw HttpError(400, "Wrong confirmation code");
   }
 
   await User.findByIdAndUpdate(user._id, {
@@ -141,10 +156,6 @@ const resendVerifyEmail = async (req, res) => {
   const user = await User.findOne({ email: normalizedEmail });
   if (!user) {
     throw HttpError(404, "User not found");
-  }
-
-  if (user.verified) {
-    throw HttpError(400, "Verification has already been passed");
   }
 
   // create verificationCode for verifying an email after sign up
@@ -173,6 +184,51 @@ const resendVerifyEmail = async (req, res) => {
   await sendSgEmail(verificationEmail);
 
   res.status(200).json({ message: "Verification email sent" });
+};
+
+const forgotPassword = async (req, res)=> {
+  const { email } = req.body;
+
+  if (!email) {
+    throw HttpError(400, "Missing required field email");
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) {
+    throw HttpError(404, "User not found");
+  }
+
+  if (!user.verified) {
+    throw HttpError(400, "Email not verified");
+  }
+
+  const verificationToken = generateRandomNumber();
+
+  const updatedVerificationToken = await User.findByIdAndUpdate(
+      user._id,
+      { verificationToken },
+      {
+        new: true,
+        select: "verificationToken",
+      }
+  );
+
+  if (!updatedVerificationToken) {
+    throw HttpError(422, "Unprocessable Content");
+  }
+
+  const verificationEmail = {
+    to: normalizedEmail,
+    subject: "Please confirm reset password",
+    html: `<p>Confirmation code <h1>${verificationToken}</h1> to reset password of your authorization by email: <strong>${normalizedEmail}</strong></p>`,
+  };
+
+  await sendSgEmail(verificationEmail);
+
+  res.status(200).json({ message: "Confirmation code sent to email" });
+
 };
 
 const getCurrentUser = async (req, res) => {
@@ -288,6 +344,49 @@ const changeUserPassword = async (req, res) => {
   res.status(200).json({ user: updatedUser });
 };
 
+const changeForgottenPassword = async (req, res) => {
+
+  const { email, newPassword } = req.body;
+
+  if (JSON.stringify(req.body) === "{}") {
+    throw HttpError(400, "No data to update with");
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) {
+    throw HttpError(404, "User not found");
+  }
+
+  // compares if password in DB is the same as password in request. If it is, it returns true.
+  const passwordCompare = await bcrypt.compare(newPassword, user.password);
+
+  if (passwordCompare) {
+    throw HttpError(400, "you cannot use the old password");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+  const updatedUser = await User.findByIdAndUpdate(
+      user._id,
+      {
+        password: hashedPassword,
+        verificationToken: "",
+      },
+      {
+        new: true, // return a new version of updated user
+        select: "id theme name email phone birthday skype avatarURL", // fields that we need to be returned
+      }
+  );
+
+  if (!updatedUser) {
+    throw HttpError(400, "Email or password is wrong");
+  }
+
+  res.status(200).json({ user: updatedUser });
+};
+
 // const updateUserAvatar = async (req, res) => {
 //   const { _id, avatarPublicId: avatarIdFromDB = null } = req.user;
 //
@@ -336,5 +435,7 @@ module.exports = {
   getCurrentUser: ctrlWrapper(getCurrentUser),
   updateUserProfile: ctrlWrapper(updateUserProfile),
   changeUserPassword: ctrlWrapper(changeUserPassword),
+  forgotPassword: ctrlWrapper(forgotPassword),
+  changeForgottenPassword: ctrlWrapper(changeForgottenPassword),
   // updateUserAvatar: ctrlWrapper(updateUserAvatar),
 };

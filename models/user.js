@@ -113,12 +113,18 @@ const userPasswordSchema = Joi.object({
   newPassword: Joi.string().min(6).required(),
 }).unknown(true);
 
+const userForgotPasswordSchema = Joi.object({
+    email: Joi.string().pattern(EMAIL_REGEX),
+    newPassword: Joi.string().min(6).required(),
+}).unknown(true);
+
 const schemas = {
   signupSchema,
   emailSchema,
   loginSchema,
   updateUserSchema,
   userPasswordSchema,
+    userForgotPasswordSchema
 };
 
 // model() method creates a model of the Schema. It is a Class, so we use capital letter. 1st argument - name of the collection of DB in a ❗single form, 2nd - schema

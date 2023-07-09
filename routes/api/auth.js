@@ -24,6 +24,18 @@ router.post(
   ctrl.resendVerifyEmail
 );
 
+router.post(
+    "/forgot-password",
+    validateBody(schemas.emailSchema),
+    ctrl.forgotPassword
+);
+
+router.patch(
+    "/change-password",
+    validateBody(schemas.userForgotPasswordSchema),
+    ctrl.changeForgottenPassword
+);
+
 router.get("/:userId", authenticate, isValidId("userId"), ctrl.getCurrentUser);
 
 router.patch(
